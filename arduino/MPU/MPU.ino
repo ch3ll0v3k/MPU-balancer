@@ -39,6 +39,7 @@ uint8_t isArmed = 0;
 uint8_t isRevPast = 0;
 uint8_t isStarted = 0;
 uint8_t currSide = 1;
+uint8_t useNormVector = 0;
 
 uint8_t lowPast = 0;
 uint8_t hightPast = 0;
@@ -93,7 +94,34 @@ void loop(){
   }
 
   if( !isStarted ){
-    delay(100);
+    // delay(100);
+
+    float dx = 0;
+    float dy = 0;
+    float dz = 0;
+
+    if( useNormVector ){
+      Vector nAcc = mpu.readNormalizeAccel();
+      dx = nAcc.XAxis + 0;
+      dy = nAcc.YAxis + 0;
+      // dz = nAcc.ZAxis + 0;
+
+    }else{
+      Vector nAcc = mpu.readRawAccel();
+      dx = nAcc.XAxis + f_x;
+      dy = nAcc.YAxis + f_y;
+      // dz = nAcc.ZAxis + f_z;
+    }
+
+    // Serial.print(" rev: "); Serial.print( revCounter );
+    Serial.print(" u:"); Serial.print( useNormVector ? 10 : 1000 );
+    Serial.print(" dx:"); Serial.print( dx );
+    Serial.print(" dy:"); Serial.print( dy );
+    Serial.print(" d:"); Serial.print( useNormVector ? -10 : -1000  );
+    // Serial.print(" dz:"); Serial.print( dz );
+    Serial.println();
+    
+    // delay(1);
     return;
   }
 
@@ -112,9 +140,16 @@ void loop(){
     // Vector nAcc = mpu.readNormalizeAccel();
     Vector nAcc = mpu.readRawAccel();
 
+    /*
     float dx = nAcc.XAxis + f_x;
     float dy = nAcc.YAxis + f_y;
     // float dz = nAcc.ZAxis + f_z;
+    */
+
+    float dx = nAcc.XAxis + 0;
+    float dy = nAcc.YAxis + 0;
+    // float dz = nAcc.ZAxis + 0;
+
 
     // Serial.print(" rev: "); Serial.print( revCounter );
     Serial.print(" u:"); Serial.print( 1000 );
