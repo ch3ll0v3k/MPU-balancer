@@ -5,8 +5,14 @@
 
 // mega => SRAM: 8 KB
 #define MAX_READING_P_180_DEG 200 // (336.0 rp/s) / 2.0
+#define SERIAL_SPEED 115200
+#define ESC_MIN_MSEC 800
+#define ESC_WORK_MSEC 920
+#define ESC_MAX_MSEC 1300 // => 2400 real-value
 
-
+#define ESC_PIN A2
+#define PROP_INT 2
+#define ARM_INT 3
 
 // LOW to trigger the interrupt whenever the pin is low,
 // CHANGE to trigger the interrupt whenever the pin changes value
@@ -28,37 +34,27 @@ void updateEsc();
 
 MPU6050 mpu;
 Servo esc;
-uint16_t mDealy = 50;
-uint8_t isArmed = 0;
-uint8_t currSide = 0;
 
-uint8_t low_past = 0;
-uint8_t hight_past = 0;
-uint8_t rev_past = 0;
-uint8_t started = 0;
+uint8_t isArmed = 0;
+uint8_t isRevPast = 0;
+uint8_t isStarted = 0;
+uint8_t currSide = 1;
+
+uint8_t lowPast = 0;
+uint8_t hightPast = 0;
+uint8_t revPast = 0;
 uint32_t revCounter = 0;
 
-unsigned long time_t = millis(); 
-unsigned long side_0_t = millis(); 
-unsigned long side_1_t = millis(); 
+float a0[3] = { 0, 0, 0 };
+float a1[3] = { 0, 0, 0 };
 
-uint16_t side_0_readings = 0;
-uint16_t side_1_readings = 0;
-
-uint16_t side_0_angs = 0;
-uint16_t side_1_angs = 0;
-
-float side_0_x[ MAX_READING_P_180_DEG ];
-float side_0_y[ MAX_READING_P_180_DEG ];
-// float side_0_z[ MAX_READING_P_180_DEG ];
-
-float side_1_x[ MAX_READING_P_180_DEG ];
-float side_1_y[ MAX_READING_P_180_DEG ];
-// float side_1_z[ MAX_READING_P_180_DEG ];
+int16_t f_x = 0;
+int16_t f_y = 0;
+int16_t f_z = 0;
 
 void setup() {
 
-  Serial.begin(115200);
+  Serial.begin( SERIAL_SPEED );
   Serial.println("Initialize MPU6050");
   while(!mpu.begin(MPU6050_SCALE_2000DPS, MPU6050_RANGE_2G)){
     Serial.println("Could not find a valid MPU6050 sensor, check wiring!");
@@ -67,26 +63,22 @@ void setup() {
 
   cleanUpData();
 
-  // mpu.setAccelOffsetX();
-  // mpu.setAccelOffsetY();
-  // mpu.setAccelOffsetZ();
-
-  // pinMode (2, INPUT);  // [INPUT_PULLUP] internal pull-up resistor
-
-  attachInterrupt( digitalPinToInterrupt(2), intFunc, RISING ); // FALLING, RISING
-  // attachInterrupt( digitalPinToInterrupt(2), intFunc, FALLING ); // FALLING, RISING
-  attachInterrupt( digitalPinToInterrupt(3), toggleArm, CHANGE );
+  attachInterrupt( digitalPinToInterrupt(PROP_INT), intFunc, RISING ); // FALLING, RISING
+  attachInterrupt( digitalPinToInterrupt(ARM_INT), toggleArm, FALLING );
 
   pinMode(A0, INPUT);
   pinMode(A1, INPUT);
-  pinMode(A2, OUTPUT);
+  pinMode(ESC_PIN, OUTPUT);
   pinMode(A3, INPUT);
   pinMode(LED_BUILTIN, OUTPUT);
 
-  esc.attach( A2 );
-  esc.writeMicroseconds( 800 );
+  esc.attach( ESC_PIN );
+  esc.writeMicroseconds( ESC_MIN_MSEC );
   digitalWrite( LED_BUILTIN, isArmed );
-  // digitalWrite( 2, HIGH );
+
+  f_x = mpu.getAccelOffsetX();
+  f_y = mpu.getAccelOffsetY();
+  f_z = mpu.getAccelOffsetZ();
 
 }
 
@@ -94,166 +86,88 @@ unsigned long loop_time_t = millis();
 
 void loop(){
 
-  // digitalWrite( LED_BUILTIN, isArmed );
-
   if( !isArmed ){
-    esc.writeMicroseconds( 800 );
+    esc.writeMicroseconds( ESC_MIN_MSEC );
     delay(100);
     return;
   }
 
-  // Serial.println( analogRead(A3) );
-  // Serial.println( digitalRead(2) );
-  
-  updateEsc();
-  // delay(1); 
-  // return;
-
-  if( !started ){
+  if( !isStarted ){
     delay(100);
     return;
   }
 
   unsigned long time_t = millis(); 
-
   if( loop_time_t +1000 < time_t ){
     loop_time_t = time_t;
-    Serial.print(" revCounter: [0]: "); Serial.println(revCounter *60);
-    revCounter = 0;
+    // Serial.print(" revCounter: [0]: "); Serial.println(revCounter *60);
+    // revCounter = 0;
+    // isRevPast = 1;
+    updateEsc();
   }
 
-  Vector nAcc = mpu.readNormalizeAccel();
+  if( isRevPast ){
+    isRevPast = !isRevPast;
 
-  if( !currSide ){
-    if( side_0_readings < MAX_READING_P_180_DEG ){
-      side_0_x[ side_0_readings ] = nAcc.XAxis;
-      side_0_y[ side_0_readings ] = nAcc.YAxis;
-      // side_0_z[ side_0_readings ] = nAcc.ZAxis;
-      side_0_readings++;
-    }
-  }else{
-    if( side_1_readings < MAX_READING_P_180_DEG ){
-      side_1_x[ side_1_readings ] = nAcc.XAxis;
-      side_1_y[ side_1_readings ] = nAcc.YAxis;
-      // side_1_z[ side_1_readings ] = nAcc.ZAxis;
-      side_1_readings++;
-    }
+    // Vector nAcc = mpu.readNormalizeAccel();
+    Vector nAcc = mpu.readRawAccel();
+
+    float dx = nAcc.XAxis + f_x;
+    float dy = nAcc.YAxis + f_y;
+    // float dz = nAcc.ZAxis + f_z;
+
+    // Serial.print(" rev: "); Serial.print( revCounter );
+    Serial.print(" u:"); Serial.print( 1000 );
+    Serial.print(" dx:"); Serial.print( dx );
+    Serial.print(" dy:"); Serial.print( dy );
+    Serial.print(" d:"); Serial.print( -1000 );
+    // Serial.print(" dz:"); Serial.print( dz );
+    Serial.println();
+
   }
 
-  // delay(1);
-
-  // uint16_t a1 = analogRead(A1);
-  // uint16_t a1_map = map(a1, 0, 500, 2400, 600 ); 
-  // Serial.print(" a1_map: "); Serial.print(a1_map);
 }
 
 void intFunc(){
 
   if( !isArmed ) return;
-
-  if( !started ){
-    started = 1;
-  }else{
-    currSide = !currSide;
-  }
+  currSide = !currSide;
+  isStarted = 1;
 
   if( !currSide ){
-    side_0_t = millis();
-    // side_0_readings = 0;
-    if( hight_past )
-      low_past = 1;
+    if( hightPast ) 
+      lowPast = 1;
+
+    // a0[ 0 ] = nAcc.XAxis;
+    // a0[ 1 ] = nAcc.YAxis;
+    // a0[ 2 ] = nAcc.ZAxis;
+
   }else{
-    side_1_t = millis();
-    // side_1_readings = 0;
-    hight_past = 1;
+    hightPast = 1;
+    // a1[ 0 ] = nAcc.XAxis;
+    // a1[ 1 ] = nAcc.YAxis;
+    // a1[ 2 ] = nAcc.ZAxis;
   }
 
-  rev_past = ( low_past && hight_past );
-  if( rev_past ){
-    low_past = 0;
-    hight_past = 0;
+  revPast = ( lowPast && hightPast );
+  if( revPast ){
+    revCounter++;  
+    lowPast = 0;
+    hightPast = 0;
+    isRevPast = 1;
   }
-
-  if( !rev_past ) return;
-  revCounter++;
-  // Serial.print(" revCounter: [1]: "); Serial.println(revCounter);
-
-  // side_0_readings = 0;
-  // side_1_readings = 0;
-  // return;
-
-  side_0_angs = 180.0 / (float)side_0_readings;
-  side_1_angs = 180.0 / (float)side_1_readings;
-
-  uint16_t lessRedings = side_0_readings > side_1_readings 
-    ? side_1_readings 
-    : side_0_readings;
-
-  float delta_a[ lessRedings ];
-  float maxOffset = 0;
-  float maxIndex = 0;
-
-  float minOffset = 0;
-  float minIndex = 0;
-
-  for( uint16_t i=0; i<lessRedings; i++ ){
-    float a0x = side_0_x[ i ];
-    float a0y = side_0_y[ i ];
-    float a0 = atan2( a0y, a0x );
-
-    float a1x = side_1_x[ i ];
-    float a1y = side_1_y[ i ];
-    float a1 = atan2( a1y, a1x );
-
-    delta_a[ i ] = (a0 -a1);
-
-    if( delta_a[ i ] > maxOffset ){
-      maxOffset = delta_a[ i ];
-      maxIndex = i;
-    }
-
-    if( delta_a[ i ] < minOffset ){
-      minOffset = delta_a[ i ];
-      minIndex = i;
-    }
-
-  }
-
-  // float relAngle = biggestIndex * side_0_angs;
-
-  Serial.print(" min-i: "); Serial.print(minIndex);
-  Serial.print(" min-v: "); Serial.print(minOffset);
-
-  Serial.print(" max-i: "); Serial.print(maxIndex);
-  Serial.print(" max-v: "); Serial.print(maxOffset);
-
-  Serial.println("");
-
-  side_0_readings = 0;
-  side_1_readings = 0;
 
 }
 
 void updateEsc(){
   if( !isArmed ) return;
-
   uint16_t a1 = analogRead(A1);
   uint16_t a1_map = map(a1, 0, 500, 2400, 600 ); 
   // Serial.print(" a1_map: "); Serial.println(a1_map);
   esc.writeMicroseconds( a1_map );
-  
 }
 
-void cleanUpData(){
-  for( uint16_t i = 0; i < MAX_READING_P_180_DEG; i++ ){
-    side_0_x[ i ] = 0.0f;
-    side_0_y[ i ] = 0.0f;
-    // side_0_z[ i ] = 0.0f;
-    side_1_x[ i ] = 0.0f;
-    side_1_y[ i ] = 0.0f;
-    // side_1_z[ i ] = 0.0f;
-  }
-}
+void cleanUpData(){ }
 
 unsigned long armToggle_time_t = 0; 
 void toggleArm(){
@@ -264,9 +178,35 @@ void toggleArm(){
     return;
 
   armToggle_time_t = time_t;
+
+  if( isArmed ){
+
+    // // Serial.print("a0: ");
+    // for( uint16_t i=0; i<MAX_READING_P_180_DEG; i++ ){
+    //   float a0x = side_0_x[ i ];
+    //   float a0y = side_0_y[ i ];
+    //   float a0 = atan2( a0y, a0x );
+    //   Serial.print( a0 ); Serial.print(",");
+    // }
+    // Serial.println("");
+
+    // // Serial.print("a1: ");
+    // for( uint16_t i=0; i<MAX_READING_P_180_DEG; i++ ){
+    //   float a1x = side_1_x[ i ];
+    //   float a1y = side_1_y[ i ];
+    //   float a1 = atan2( a1y, a1x );
+    //   Serial.print( a1 ); Serial.print(",");
+    // }
+    // Serial.println("");
+
+  }
+
+  // cleanUpData();
   revCounter = 0;
+  currSide = 1;
   isArmed = !isArmed;
   digitalWrite( LED_BUILTIN, isArmed );
+  updateEsc();
   // Serial.print(" toggleArm: "); Serial.println(isArmed);
   delay( 250 );
 }
