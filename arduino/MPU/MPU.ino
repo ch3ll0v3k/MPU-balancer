@@ -39,7 +39,7 @@ uint8_t isArmed = 0;
 uint8_t isRevPast = 0;
 uint8_t isStarted = 0;
 uint8_t currSide = 1;
-uint8_t useNormVector = 0;
+uint8_t useNormVector = 1;
 
 uint8_t lowPast = 0;
 uint8_t hightPast = 0;
@@ -56,9 +56,9 @@ int16_t f_z = 0;
 void setup() {
 
   Serial.begin( SERIAL_SPEED );
-  Serial.println("Initialize MPU6050");
+  // Serial.println("Initialize MPU6050");
   while(!mpu.begin(MPU6050_SCALE_2000DPS, MPU6050_RANGE_2G)){
-    Serial.println("Could not find a valid MPU6050 sensor, check wiring!");
+    // Serial.println("Could not find a valid MPU6050 sensor, check wiring!");
     delay(1000);
   }
 
@@ -84,6 +84,9 @@ void setup() {
 }
 
 unsigned long loop_time_t = millis();
+float dx = 0;
+float dy = 0;
+float dz = 0;
 
 void loop(){
 
@@ -96,10 +99,8 @@ void loop(){
   if( !isStarted ){
     // delay(100);
 
-    float dx = 0;
-    float dy = 0;
-    float dz = 0;
 
+    /*
     if( useNormVector ){
       Vector nAcc = mpu.readNormalizeAccel();
       dx = nAcc.XAxis + 0;
@@ -112,14 +113,19 @@ void loop(){
       dy = nAcc.YAxis + f_y;
       // dz = nAcc.ZAxis + f_z;
     }
+    */
 
+    /*
     // Serial.print(" rev: "); Serial.print( revCounter );
-    Serial.print(" u:"); Serial.print( useNormVector ? 10 : 1000 );
+    // Serial.print(" u:"); Serial.print( useNormVector ? 10 : 10000 );
+    Serial.print(" u:"); Serial.print( 10000 );
     Serial.print(" dx:"); Serial.print( dx );
     Serial.print(" dy:"); Serial.print( dy );
-    Serial.print(" d:"); Serial.print( useNormVector ? -10 : -1000  );
+    Serial.print(" d:"); Serial.print( -10000 );
+    // Serial.print(" d:"); Serial.print( useNormVector ? -10 : -10000  );
     // Serial.print(" dz:"); Serial.print( dz );
     Serial.println();
+    */
     
     // delay(1);
     return;
@@ -138,25 +144,26 @@ void loop(){
     isRevPast = !isRevPast;
 
     // Vector nAcc = mpu.readNormalizeAccel();
-    Vector nAcc = mpu.readRawAccel();
+    // Vector nAcc = mpu.readRawAccel();
 
-    /*
-    float dx = nAcc.XAxis + f_x;
-    float dy = nAcc.YAxis + f_y;
-    // float dz = nAcc.ZAxis + f_z;
-    */
+    if( useNormVector ){
+      Vector nAcc = mpu.readNormalizeAccel();
+      dx = nAcc.XAxis + 0;
+      dy = nAcc.YAxis + 0;
+      // dz = nAcc.ZAxis + 0;
 
-    float dx = nAcc.XAxis + 0;
-    float dy = nAcc.YAxis + 0;
-    // float dz = nAcc.ZAxis + 0;
-
+    }else{
+      Vector nAcc = mpu.readRawAccel();
+      dx = nAcc.XAxis + f_x;
+      dy = nAcc.YAxis + f_y;
+      // dz = nAcc.ZAxis + f_z;
+    }
 
     // Serial.print(" rev: "); Serial.print( revCounter );
-    Serial.print(" u:"); Serial.print( 1000 );
+    Serial.print(" u:"); Serial.print( useNormVector ? 10 : 10000 );
     Serial.print(" dx:"); Serial.print( dx );
     Serial.print(" dy:"); Serial.print( dy );
-    Serial.print(" d:"); Serial.print( -1000 );
-    // Serial.print(" dz:"); Serial.print( dz );
+    Serial.print(" d:"); Serial.print( useNormVector ? -10 : -10000  );
     Serial.println();
 
   }
@@ -183,6 +190,8 @@ void intFunc(){
     // a1[ 1 ] = nAcc.YAxis;
     // a1[ 2 ] = nAcc.ZAxis;
   }
+
+  isRevPast = 1;
 
   revPast = ( lowPast && hightPast );
   if( revPast ){
